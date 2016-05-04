@@ -1,0 +1,18 @@
+To start the Bayesian network generator in Lisp:
+
+- Open your Lisp.
+
+- Load the file 'load.cl'.
+
+  This will compile and load the 'statistics' library and then
+  the main file 'cpt.cl'.
+
+- Run either generate-undirected-model or generate-bayesian-model
+  (see their documentation strings).
+
+  Note that these functions are both quite slow at the moment
+  (they will probably take a few hours, depending on the exact
+  parameters).
+
+
+
