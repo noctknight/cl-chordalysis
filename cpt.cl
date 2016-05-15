@@ -758,7 +758,7 @@ that corresponds to VERTICES."
           ((null xx))
         (let ((v1 (car vv))
               (v2 (car xx)))
-          (let* ((sps (shortest-paths graph v1 v2))
+          (let* ((sps (shortest-paths* graph v1 v2))
                  (len-sp (length (car sps))))
             (if* (<= len-sp 1)
 		 thenret               ; no link or directly connected
