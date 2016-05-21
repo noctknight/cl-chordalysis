@@ -300,7 +300,7 @@ its parents. Predicates with more than CUTOFF distinct values are ignored."
 
 (defun do-generate-cpt-one-node (node)
   (init-cpt-for-node node)
-  (format t "~&Generating CPT for ~S with ~D parents, dimensions ~S, df ~S.~%"
+  (format t "~&Generating CPT for ~S with parents, dimensions ~S, df ~S.~%"
           (node-real-name node) (length (node-parents node))
           (array-dimensions (node-cpt node))
           (degrees-of-freedom (node-cpt node)))
