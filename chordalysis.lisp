@@ -144,10 +144,6 @@ possible edge list by their scores."
                                         (< (graph-edge-id e1) (graph-edge-id e2)))))))))))
 
 
-(defun degrees-of-freedom (table)
-  (- (apply #'* (array-dimensions table))
-     1))
-    
 (defun frequency-table-entropy-and-total (frequency-table nr-rows)
   "Returns [1] the entropy, and [2] the total frequency of a frequency table \(i.e. an
 n-dimensional array of frequencies).
@@ -250,43 +246,12 @@ columns are sorted by column-index \(lowest index first)."
 
 (defun compute-frequency-info (graph columns)
   (declare (ignore graph)) ; later
-  (let ((table (frequency-table-for-columns columns)))
+  (let ((table (make-simple-frequency-table columns *data-source*)))
     (multiple-value-bind (entropy total)
-        (frequency-table-entropy-and-total table (nr-rows *data-source*))
+        (entropy-and-total table (nr-rows *data-source*))
       (make-frequency-info :entropy entropy
                            :total-frequency total
                            :degrees-of-freedom (degrees-of-freedom table)))))
-
-(defun frequency-table-for-columns (columns)
-  (let* ((dimensions (mapcar #'nr-unique-values columns))
-         (nr-entries (apply #'* dimensions))
-         (table-info (format nil "frequency table for ~S, dimensions ~S (~D entries)"
-                             (mapcar #'column-name columns)
-                             dimensions
-                             nr-entries)))
-    (when (> nr-entries *max-frequency-table-size*)
-      (format t "~&Skipping ~A, because it's too big.~%" table-info)
-      (error 'frequency-table-too-big
-             :field-names (mapcar #'column-name columns)
-             :dimensions dimensions))
-    ;; Create and fill the frequency table.
-    (format t "~&Computing frequency table with ~D entries and dimensions ~S.~%"
-            nr-entries
-            dimensions)
-    (let ((table (make-array dimensions :element-type 'fixnum :initial-element 0)))
-      (dolist (row (rows *data-source*))
-        (block out
-          (let ((indices '()))
-            (dolist (column columns)
-              (let ((value (aref row (column-index column))))
-                (when (null value) ; unknown value: we can't increment a frequency
-                  (return-from out))
-                (let ((index (or (position value (unique-values column) :test #'equal)
-                                 (error "value ~s is not valid for ~s" value column))))
-                  (push index indices))))
-            ;; Increment the right frequency entry.
-            (incf (apply #'aref table (nreverse indices))))))
-      table)))
 
 ;;;
 ;;; Debugging
@@ -550,7 +515,7 @@ at the moment. DESTINATION is a stream designator."))
          (loop for v in (graph-nodes graph)
             for parents = (vertex-parents v graph)
             for columns = (columns-for-vertices (reverse (cons v parents)) :sorted nil)
-            for table = (handler-case (frequency-table-for-columns columns)
+            for table = (handler-case (compute-frequency-array columns *data-source*)
                           (frequency-table-too-big ()
                             nil))
             when table

@@ -219,7 +219,7 @@ the beginning and a right-open interval at the end)."
                            (assert (or (null prev-max) (> max prev-max)))
                            (setq prev-max max)))
               ;; Add a right-open interval for numbers that are higher
-              ;; than the last specified maximum.
+              ;; than the highest specified maximum.
               (list (make prev-max nil))))))
 
 

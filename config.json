@@ -1,6 +1,6 @@
 {
 
-"datasource": "data/protein.csv",
+"datasource": "data/orphamine.csv",
 
 "max_columns": 95,
 "max_distinct_values": 50,
@@ -8,7 +8,7 @@
 "max_frequency_table_size": 10000000,
 
 "max_iterations": 40,
-"threshold": 0.99,
+"threshold": 0.05,
 
 "default_missing": ["", "-"],
 

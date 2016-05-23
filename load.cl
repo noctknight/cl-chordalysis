@@ -30,6 +30,7 @@
                     "graph.lisp"
                     "log.lisp"
                     "data-source.lisp" "csv.lisp" 
+                    "frequency-table.lisp"
                     "chordalysis.lisp"
                     #-laptop "agraph-to-csv.lisp")
    do (compile-file (merge-pathnames file *base-dir*)
