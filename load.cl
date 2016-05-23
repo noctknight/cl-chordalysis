@@ -26,7 +26,8 @@
 (loop for lib in '(:statistics :csv-parser :alexandria :yason)
    do (asdf:oos 'asdf:load-op lib :force t))
 
-(loop for file in '("package.lisp" "specials.lisp" "util.lisp" "conditions.lisp" "config.lisp"
+(loop for file in '("package.lisp" "specials.lisp" "util.lisp" "conditions.lisp"
+                    "config.lisp"
                     "graph.lisp"
                     "log.lisp"
                     "data-source.lisp" "csv.lisp" 
@@ -36,4 +37,3 @@
    do (compile-file (merge-pathnames file *base-dir*)
                     :load-after-compile t))
 
-;(chordalysis::run)  ; comment this out if you don't want to start running immediately
