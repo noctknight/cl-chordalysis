@@ -12,6 +12,9 @@ Example (using '//' for comments, which is not legal JSON syntax).
 
 {
 
+// The name of the database or CSV file.
+"datasource": "data/orphamine.csv"
+
 // The maximum number of columns (or 'predicates', if you prefer).
 // All other columns will be ignored.
 "max_columns": 95,
@@ -69,11 +72,17 @@ Example (using '//' for comments, which is not legal JSON syntax).
 (defun load-config (&key (file (merge-pathnames "config.json" cl-user::*base-dir*)))
   (format t "~&Loading configuration file ~S~%" file)
   (let ((plist (load-json-file file)))
+    (format *standard-output* "~&---------------- Settings --------------------------------~%")
+    (loop for (key value) on plist by #'cddr
+         do (format t "~&~A: ~S~%" key value))
+    (format *standard-output* "~&----------------------------------------------------------~%")
     (when plist
       (macrolet ((setting (special-variable key default)
                    `(let ((value (getf plist ,key)))
                       (setq ,special-variable (or value ,default)))))
-        (list (setting *max-columns* :max_columns 100)
+        (list (setting *db-name* :datasource
+                       (error "You need to specify a value for \"datasource\" in config.json."))
+              (setting *max-columns* :max_columns 100)
               (setting *max-distinct-values* :max_distinct_values 50)
               (setting *max-iterations* :max_iterations 50)
               (setting *threshold* :threshold 0.05)

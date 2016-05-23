@@ -1,18 +1,74 @@
 To start the Bayesian network generator in Lisp:
 
-- Open your Lisp.
+1. Open your Lisp.
 
-- Load the file 'load.cl'.
+2. Load the file 'run.lisp'.
 
-  This will compile and load the 'statistics' library and then
-  the main file 'cpt.cl'.
+This will start the program, using configuration info from the file 'config.json'.  A log
+file will be written to the file 'log-chordalysis-TIMESTAMP.txt'.  The resulting graph
+will be written to 'graph-TIMESTAMP.py".  A text file with graph data that can be loaded
+into Mathematica will be written to 'graphical-log-TIMESTAMP.txt'.
 
-- Run either generate-undirected-model or generate-bayesian-model
-  (see their documentation strings).
+Here's what the JSON configuration file can look like (except that you shouldn't '//' for
+comments, because JSON doesn't have a syntax for comments).
 
-  Note that these functions are both quite slow at the moment
-  (they will probably take a few hours, depending on the exact
-  parameters).
+-----------------------------------------------------------------------------------
+{
 
+// The name of the database or CSV file. Must be specified.
+"datasource": "data/orphamine.csv"
 
+// The maximum number of columns (or 'predicates', if you prefer).
+// All other columns will be ignored.
+"max_columns": 95,
+
+// If a column has more than this number of distinct values, it is ignored.
+"max_distinct_values": 50,
+
+// Frequency tables with more than this number of entries are not computed and the
+// corresponding edges will be skipped.
+"max_frequency_table_size": 10000000,
+
+// The system will keep adding edges to the graph until either [1] 'max_iterations' is
+// reached, or [2] there are no edges left with a p-value of at least 'threshold'.
+"max_iterations": 30,
+"threshold": 0.05,
+
+// A list with values that should be considered to be missing values.
+"default_missing": ["", "-"],
+
+// A list of column specifications. Each specification can include the following parts:
+//
+//  "name" [required]: the field name
+//
+//  "missing" [optional]: a list of values that should be interpreted as missing value
+//    (in addition to the ones specified by 'default_missing'). Example: ["999"].
+//
+//  "type" [optional, default: "categorical"]: either "categorical" or "numerical".
+//
+//  "quantiles" [optional]: may be specified if the field type is "numerical".
+//      If specified, this is a list of numbers that divide the quantile intervals.
+//      Example: {0,10,20,50,100} will create 4 quantiles: 0 <= x < 10, 10 <= x < 20,
+//      20 <= x < 50, 50 <= x < 100.
+
+"columns":
+  [{"name": "tot_money_ind",
+    "type": "numerical", 
+    "quantiles": [0, 500, 1000, 2000, 3000, 5000, 10000]},
+
+   {"name": "max_money_ind",
+    "type": "numerical"},
+
+   {"name": "age",
+    "type": "numerical",
+    "quantiles": [10, 20, 30, 40, 60, 80]},
+
+   {"name": "tot_score_ind",
+    "type": "numerical",
+    "missing": ["", "0.0"],
+    "quantiles": [1, 10, 20, 30, 50, 100]}
+  ]
+}
+
+----------------------------------------------------------------------------------------
 

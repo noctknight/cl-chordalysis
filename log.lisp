@@ -6,12 +6,25 @@
 
 (defvar *log-timestamp* nil)
 
-(defun start-logging ()
+(defmacro with-logging (() &body body)
+  `(call-with-logging (lambda () ,@body)))
+
+(defun call-with-logging (thunk)
   (setq *log-timestamp*
         (multiple-value-bind (ss mm hh day month year)
             (decode-universal-time (get-universal-time))
           (format nil "~D~2,'0D~2,'0DT~2,'0D~2,'0D~2,'0D"
-                  year month day hh mm ss))))
+                  year month day hh mm ss)))
+  (with-open-file (log-stream (log-file)
+                              :direction :output :if-exists :supersede
+                              :external-format :utf-8)
+    (let ((*standard-output* (make-broadcast-stream *standard-output* log-stream)))
+      (funcall thunk))))
+
+(defun log-file ()
+  (make-pathname :name (format nil "log-chordalysis-~A" *log-timestamp*)
+                 :type "txt"
+                 :defaults cl-user::*base-dir*))
 
 (defun graphical-log-file ()
   (when *graphical-log-file*

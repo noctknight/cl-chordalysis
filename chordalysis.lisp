@@ -665,18 +665,12 @@ NODES that would have too big frequency tables are skipped."
     (output-graph model :jags out)
     (list model out)))
 
-(defun generate-undirected-model (&key
-                                    (max-iterations 15)
-                                    (show-scores t)
-                                    (threshold *threshold*))
+(defun generate-undirected-model (&key (max-iterations 15) (threshold *threshold*))
   
   "Generate and return a decomposable model (undirected graph) for the
 triple store in *DB-NAME* on the local Allegrograph server. The system will
 keep adding edges until either [1] MAX-ITERATIONS is reached, or [2]
 there are no edges left with a score of at least SCORE-THRESHOLD.
-
-  If SHOW-SCORES is true, the initial scores and entropies of all edges
-will be printed to standard output.
 
   You can visualize the network that's being created by opening the
 triple store in Gruff, going to View - Query View, running a query like
@@ -691,8 +685,7 @@ and then clicking on 'Create Visual Graph'."
     #-laptop(open-triple-store *db-name*)
     (unwind-protect (progn
                       (initialize-edge-scores graph)
-                      (when show-scores
-                        (display-scores graph))
+                      (display-scores graph)
                       (register-namespaces)
                       (start-adding-edges)
                       (loop for i from 1 to (or max-iterations 100000)
@@ -706,7 +699,7 @@ and then clicking on 'Create Visual Graph'."
       #-laptop(close-triple-store))
     graph))
 
-(defun run (&key (filename "graph.py") (show-scores t) (skip-config nil))
+(defun run (&key (filename "graph.py") (skip-config nil))
 
   "Generate a Bayesian network (directed graph) for the data source in
 in *DB-NAME* and write out the network specification to FILENAME.
@@ -725,19 +718,17 @@ triple store in Gruff, going to View - Query View, running a query like
 
 and then clicking on 'Create Visual Graph'."
 
-  ;; Create a new timestamp for the log files.
-  (start-logging)
-  ;; Load configuration file if necessary.
-  (unless skip-config
-    (load-config))
-  ;; Generate an undirected model, convert it to a Bayesian network and export that.
-  (let* ((model (generate-undirected-model :max-iterations *max-iterations*
-                                           :show-scores show-scores
-                                           :threshold *threshold*))
-         (bayesian (equivalent-bayesian-model model)))
-    (graphical-log "Bayesian equivalent" :graph bayesian :is-directed t)
-    (setq *model* model) ; for debugging only
-    (export-model bayesian
-                  (make-pathname :name (format nil "~A-~A" (pathname-name filename) *log-timestamp*)
-                                 :type (pathname-type filename)
-                                 :defaults cl-user::*base-dir*))))
+  (with-logging ()
+    ;; Load configuration file if necessary.
+    (unless skip-config
+      (load-config))
+    ;; Generate an undirected model, convert it to a Bayesian network and export that.
+    (let* ((model (generate-undirected-model :max-iterations *max-iterations*
+                                             :threshold *threshold*))
+           (bayesian (equivalent-bayesian-model model)))
+      (graphical-log "Bayesian equivalent" :graph bayesian :is-directed t)
+      (setq *model* model) ; for debugging only
+      (export-model bayesian
+                    (make-pathname :name (format nil "~A-~A" (pathname-name filename) *log-timestamp*)
+                                   :type (pathname-type filename)
+                                   :defaults cl-user::*base-dir*)))))
