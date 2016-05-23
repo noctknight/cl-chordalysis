@@ -137,60 +137,40 @@ V1 and V2.)"
   :ok)
     
 
-                                  
-(defun shortest-paths (graph v1 v2)
-  "Returns a list of the shortest paths from V1 to V2. Each path is a
-list containing the vertices on the path to V2. 
-V1 is included in the list."
-  (loop for p in (shortest-paths* graph v1 v2)
-     collect (cons v1 p)))
-   
 (defun shortest-paths* (graph v1 v2)
   "Returns a list of the shortest paths from V1 to V2. Each path is a
 list containing the vertices on the path to V2. 
 V1 is not included in the list."
-  (dolist (edge (graph-edges graph)
-           ;; no direct link so do it the hard way
-           (mapcar #'(lambda (revpath) (cdr (reverse revpath)))
-                   (shortest-paths-do graph
-                                      `((,v1))
-                                      v2)))
-    (when (and (eq v1 (car edge))
-               (eq v2 (cdr edge)))
-      (return (list (list v2))))))
+  (mapcar #'cdr (shortest-paths graph v1 v2)))
 
-
-(defun shortest-paths-do (graph paths v2)
-  (let ((newpaths '())
-        (edges (graph-edges graph))
-        (final nil))
-    (loop
-      (dolist (path paths)
-	(let ((v1 (car path)))
-	  (dolist (edge edges)
-	    (when (and (eq v1 (car edge))
-                       (not (member (cdr edge) path)))
-              (cond ((eq (cdr edge) v2)
-		     ;; final vertex
-                     (when (not final)
-                       ;; forget anything we've seen
-                       (setq newpaths nil))
-                     (setq final t)
-                     (push (cons (cdr edge) path) newpaths)
-                     (return)) ; no more looking at edges
-                    ((not final)
-                     ;; still searching, save this
-                     (push (cons (cdr edge) path) newpaths))
-                    (t ;; not a winner so ignore
-                     :ignore))))))
-      (when final
-        (return-from shortest-paths-do newpaths))
-      
-      (if newpaths 
-	  (setq paths newpaths
-                newpaths nil)
-          (return)))))
-
+(defun shortest-paths (graph v1 v2)
+  "Returns a list of the shortest paths from V1 to V2. Each path is a
+list containing the vertices on the path to V2. V1 is included in the list."
+  ;; Shortest paths from V1 to V2: [1] for each neighbor N of V1, compute all shortest
+  ;; paths from N to V2, [2] then insert V1 in front of those shortest paths.
+  (let ((visited
+         ;; A hash-table with vertices as keys where each value is either T (for visited
+         ;; nodes that do not reach V2) or a list of conses of shortest paths that reach
+         ;; V2 and their lengths.
+         (make-hash-table)))
+    (labels ((walk (start)
+               "Returns a list of conses, where each cons contains a path and a path length."
+               (if (eql start v2)
+                   (list (cons (list v2) 1))
+                   (let ((previous (gethash start visited)))
+                     (if previous
+                         (if (listp previous) previous nil)
+                         (let ((neighbors (vertex-children start graph)))
+                           (setf (gethash start visited) t)
+                           (let ((neighbor-paths (loop for n in neighbors
+                                                    append (walk n))))
+                             (when neighbor-paths
+                               (setf (gethash start visited)
+                                     (let ((shortest-length (reduce #'min (mapcar #'cdr neighbor-paths))))
+                                       (loop for (path . length) in neighbor-paths
+                                          when (= length shortest-length)
+                                          collect (cons (cons start path) (1+ length)))))))))))))
+      (mapcar #'car (walk v1)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Chordality, minimal separators, maximal cliques,

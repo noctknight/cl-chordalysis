@@ -51,6 +51,7 @@ FREQUENCY-INFO structs.")))
   (score 0)      ; same as delta-entropy; the edge with the best (i.e. highest) score will be added next
   (p-value 0)    ; used as termination criterion (stop when no edge with p-value lower than threshold)
   separators     ; list of vertices (i.e. symbols) separating V1 and V2.
+  disabled       ; true if this edge is (temporarily) disabled because it would lead to a non-chordal graph
   )
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -408,7 +409,9 @@ columns are sorted by column-index \(lowest index first)."
                          (ensure-separator-set graph v1 v2 separator)))
                       (t
                        ;; The shortest paths are of the form V1 - X - more nodes... - V2.
-                       ;; DO: I don't know why we disable possible edges here.
+                       ;; This means that adding an edge V1-V2 would lead to a non-chordal
+                       ;; graph (because it would get a cycle of length 4 or more), so we
+                       ;; have to disable V1-V2 for now.
                        (disable-possible-edge graph v1 v2))))))
 
       ;; Show ordering and chordality.
