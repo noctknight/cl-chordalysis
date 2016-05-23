@@ -35,4 +35,4 @@
    do (compile-file (merge-pathnames file *base-dir*)
                     :load-after-compile t))
 
-(chordalysis::run)  ; comment this out if you don't want to start running immediately
+;(chordalysis::run)  ; comment this out if you don't want to start running immediately

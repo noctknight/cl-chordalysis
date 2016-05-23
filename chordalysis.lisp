@@ -36,10 +36,7 @@ details):
 (defclass graph (basic-graph)
   ((possible-edges :initform '() :accessor graph-possible-edges
                        :documentation "List of possible edges (GRAPH-EDGE structs) to add,
-                       sorted by score")
-   (disabled-edges :initform '() :accessor graph-disabled-edges
-                       :documentation "List of edges (GRAPH-EDGE structs) that may not be
-                       added at the moment.")
+                       sorted by [1] enabledness [2] score [3] edge id.")
    (entropy-cache :initarg :entropy-cache :reader entropy-cache
                   :documentation "A hash-table from ordered lists of column numbers to
 FREQUENCY-INFO structs.")))
@@ -51,12 +48,12 @@ FREQUENCY-INFO structs.")))
   (score 0)      ; same as delta-entropy; the edge with the best (i.e. highest) score will be added next
   (p-value 0)    ; used as termination criterion (stop when no edge with p-value lower than threshold)
   separators     ; list of vertices (i.e. symbols) separating V1 and V2.
-  disabled       ; true if this edge is (temporarily) disabled because it would lead to a non-chordal graph
+  is-disabled    ; true if this edge is (temporarily) disabled because it would lead to a non-chordal graph
   )
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Building a graph structure for data from the database.
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defun build-graph (&key (cutoff *max-distinct-values*))
   "Predicates that have more than CUTOFF distinct values are ignored."
@@ -101,6 +98,7 @@ FREQUENCY-INFO structs.")))
              (edges (loop for (v1 . tail) on (mapcar #'column-name columns)
                        append (loop for v2 in tail
                                  collect (make-graph-edge :id (incf nr-edges)
+                                                          :is-disabled nil
                                                           :v1 v1
                                                           :v2 v2)))))
         (setf (graph-possible-edges graph) edges)
@@ -108,9 +106,9 @@ FREQUENCY-INFO structs.")))
         (format t "~&~D possible edges in the graph~%" (length edges))
         graph))))
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Entropies and scores
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defun initialize-edge-scores (graph)
   "Compute the score for all possible edges and then sort the graph's
@@ -132,10 +130,19 @@ possible edge list by their scores."
         (stable-sort (copy-list (graph-possible-edges graph))
                      (lambda (e1 e2)
                        (let ((score1 (graph-edge-score e1))
-                             (score2 (graph-edge-score e2)))
-                         (or (> score1 score2)
-                             (and (= score1 score2)
-                                  (< (graph-edge-id e1) (graph-edge-id e2)))))))))
+                             (score2 (graph-edge-score e2))
+                             (disabled-1 (graph-edge-is-disabled e1))
+                             (disabled-2 (graph-edge-is-disabled e2)))
+                         (or
+                          ;; Disabled edges should go to the bottom of the list.
+                          (and (not disabled-1) disabled-2)
+                          ;; If they're both enabled (or both disabled), look at the score
+                          ;; and maybe at edge ID to break ties.
+                          (and (eql disabled-1 disabled-2)
+                               (or (> score1 score2)
+                                   (and (= score1 score2)
+                                        (< (graph-edge-id e1) (graph-edge-id e2)))))))))))
+
 
 (defun degrees-of-freedom (table)
   (- (apply #'* (array-dimensions table))
@@ -335,9 +342,9 @@ columns are sorted by column-index \(lowest index first)."
 
 (defun add-best-edge (graph)
   (sort-possible-edges graph)
-  (format t "~&~D possible edges, ~D disabled edges.~%"
+  (format t "~&~D possible edges (of which ~D disabled).~%"
           (length (graph-possible-edges graph))
-          (length (graph-disabled-edges graph)))
+          (length (remove-if-not #'graph-edge-is-disabled (graph-possible-edges graph))))
   (let ((e (pop (graph-possible-edges graph))))
     (cond ((adding-edge-is-ok graph
                               (graph-edge-v1 e) (graph-edge-v2 e))
@@ -386,33 +393,35 @@ columns are sorted by column-index \(lowest index first)."
 
       (simple-add-edge graph v1 v2)
 
-      ;; Check minimal separators for all possible edges in the graph.
+      ;; For all edges that can be created in principle, check if [1] creating them is
+      ;; possible at at all with the current nodes (if not, we don't need to do anything),
+      ;; [2] creating them would create a non-chordal graph (if it would, we disable the
+      ;; corresponding edge on the possible edge list), [3] the separators between v1 and
+      ;; v2 has changed since last time (if so, we update the score).
       (loop for (v1 . tail) on (graph-nodes graph)
          do (dolist (v2 tail)
               (let* ((shortest-paths (shortest-paths* graph v1 v2))
                      (shortest-distance
                       ;; All paths are equally short, so we just take the length of the first.
                       (length (car shortest-paths))))
-                (cond ((<= shortest-distance 1) ;
-                       ;; No link or directly connected: no need to do anything.
-                       )
-                      ((= 2 shortest-distance) 
-                       ;; The shortest paths are of the form V1 - X - V2.
-                       (let ((separator
-                              ;; Notes: [1] Some shortest paths can start with the same node,
-                              ;; so we need to remove duplicates. [2] This separator is a
-                              ;; minimal one because it's based on shortest paths. [3] This is
-                              ;; not necessarily the only minimal separator. I'm not sure if
-                              ;; that could be a problem but Petitjean's papers seem to ignore
-                              ;; this issue.
-                              (remove-duplicates (mapcar #'car shortest-paths))))
-                         (ensure-separator-set graph v1 v2 separator)))
-                      (t
-                       ;; The shortest paths are of the form V1 - X - more nodes... - V2.
-                       ;; This means that adding an edge V1-V2 would lead to a non-chordal
-                       ;; graph (because it would get a cycle of length 4 or more), so we
-                       ;; have to disable V1-V2 for now.
-                       (disable-possible-edge graph v1 v2))))))
+                (unless (<= shortest-distance 1) ; No link or directly connected: no need to do anything.
+                  (let ((edge (find-possible-edge graph v1 v2)))
+                    (when edge
+                      (if (= 2 shortest-distance) 
+                          ;; The shortest paths are of the form V1 - X - V2.
+                          (let ((separator
+                                 ;; Notes: [1] Some shortest paths can start with the same node,
+                                 ;; so we need to remove duplicates. [2] This separator is a
+                                 ;; minimal one because it's based on shortest paths. And it's
+                                 ;; unique because we're only looking at paths with 1 intermediate
+                                 ;; node between V1 and V2.
+                                 (remove-duplicates (mapcar #'car shortest-paths))))
+                            (ensure-separator-set graph edge separator))
+                          ;; The shortest paths are of the form V1 - X - more nodes... - V2.
+                          ;; This means that adding an edge V1-V2 would lead to a non-chordal
+                          ;; graph (because it would get a cycle of length 4 or more), so we
+                          ;; have to disable V1-V2 for now.
+                          (disable-possible-edge edge))))))))
 
       ;; Show ordering and chordality.
       (let ((ordering (perfect-elimination-ordering (simple-graph-copy graph))))
@@ -424,48 +433,32 @@ columns are sorted by column-index \(lowest index first)."
 
       (graphical-log message :graph graph))))
 
-	
-
-(defun ensure-separator-set (graph v1 v2 separators)
-  (multiple-value-bind (graph-edge disabled)
-      (locate-possible-edge graph v1 v2)
-    (when (null graph-edge)
+(defun ensure-separator-set (graph e separators)
+  (let ((v1 (graph-edge-v1 e))
+        (v2 (graph-edge-v2 e)))
+    (when (null e)
       (error "there should be a possible graph edge from ~s to ~s" v1 v2))
-    (cond ((set-difference separators (graph-edge-separators graph-edge))
-           ;; The separator set between V1 and V2 has changed so we need to recompute.
-           (format t "~&Separators between ~s and ~s changed from ~s to ~s~%"
-                   v1 v2 (graph-edge-separators graph-edge) separators)
-           ;; Recompute score and update the position of this edge in the possible edge list.
-           (if disabled
-               (setf (graph-disabled-edges graph)
-                     (remove graph-edge (graph-disabled-edges graph)))
-               (setf (graph-possible-edges graph)
-                     (remove graph-edge (graph-possible-edges graph))))
-           (setf (graph-edge-separators graph-edge) separators)
-           (update-score graph graph-edge)
-           (push graph-edge (graph-possible-edges graph)))
-          (disabled
-           ;; If the edge was disabled (because the shortest path was longer than 2?)
-           ;; then enable it now.
-           (format t "Bringing edge (~A ~A) back to possible~%"
-                   (graph-edge-v1 graph-edge)
-                   (graph-edge-v2 graph-edge))
-           (setf (graph-disabled-edges graph)
-                 (remove graph-edge (graph-disabled-edges graph)))
-           (push graph-edge (graph-possible-edges graph))))))
+    (when (graph-edge-is-disabled e)
+      (format t "Bringing edge (~A ~A) back to possible~%" v1 v2))
+    (setf (graph-edge-is-disabled e) nil)
+    (when (set-difference separators (graph-edge-separators e))
+      ;; The separator set between V1 and V2 has changed so we need to recompute.
+      (format t "~&Separators between ~s and ~s changed from ~s to ~s~%"
+              v1 v2 (graph-edge-separators e) separators)
+      ;; Recompute score and update the position of this edge in the possible edge list.
+      (setf (graph-edge-separators e) separators)
+      (update-score graph e))))
 
-(defun disable-possible-edge (graph v1 v2)
+(defun disable-possible-edge (edge)
   ;; Make the edge for (V1 . V2) disabled.
-  (let ((edge (find-if (lambda (e) (graph-edge-has-vertices e v1 v2))
-                       (graph-possible-edges graph))))
-    (when edge
-      (graphical-log (format nil "Moving edge (~A ~A) from possible to disabled edge list."
-                             v1 v2))
-      ;; Remove from possible edges.
-      (setf (graph-possible-edges graph)
-            (remove edge (graph-possible-edges graph) :count 1))
-      ;; Add to disabled edges.
-      (push edge (graph-disabled-edges graph)))))
+  (graphical-log (format nil "Moving edge (~A ~A) from possible to disabled edge list."
+                         (graph-edge-v1 edge) (graph-edge-v2 edge)))
+  (setf (graph-edge-is-disabled edge) t))
+
+(defun find-possible-edge (graph v1 v2)
+  "Returns a GRAPH-EDGE from POSSIBLE-EDGES or NIL."
+  (find-if (lambda (e) (graph-edge-has-vertices e v1 v2))
+           (graph-possible-edges graph)))
 
 (defun graph-edge-has-vertices (graph-edge v1 v2)
   (or (and (eq (graph-edge-v1 graph-edge) v1)
@@ -473,24 +466,6 @@ columns are sorted by column-index \(lowest index first)."
       (and (eq (graph-edge-v1 graph-edge) v2)
            (eq (graph-edge-v2 graph-edge) v1))))
 
-(defun locate-possible-edge (graph v1 v2)
-  ;; return values
-  ;;   edge
-  ;;   t if disabled
-  (do ((edges (graph-possible-edges graph) (cdr edges)))
-      ((null edges))
-    (let ((graph-edge (car edges)))
-      (when (graph-edge-has-vertices graph-edge v1 v2)
-        (return-from locate-possible-edge graph-edge))))
-  
-  (do ((edges (graph-disabled-edges graph) (cdr edges)))
-      ((null edges))
-    (let ((graph-edge (car edges)))
-      (when (graph-edge-has-vertices graph-edge v1 v2)
-        (return-from locate-possible-edge 
-          (values graph-edge t))))))
-  	    
-      
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Predicates
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
